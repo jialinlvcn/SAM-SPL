@@ -1,2 +1,8 @@
 # SAM-SPL
-A Unified SAM-Guided Self-Prompt Learning Framework for Infrared Small Target Detection
+Pytorch implementation for A Unified SAM-Guided Self-Prompt Learning Framework for Infrared Small Target Detection. (Under review)
+
+The code will be released upon acceptance.
+
+<p align="center">
+    <img src=./detect_vis.png width="800">
+</p>
