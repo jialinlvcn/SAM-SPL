@@ -4,5 +4,5 @@ Pytorch implementation for A Unified SAM-Guided Self-Prompt Learning Framework f
 The code will be released upon acceptance.
 
 <p align="center">
-    <img src=./detect_vis.png width="800">
+    <img src=./assets/detect_vis.png width="800">
 </p>
