@@ -74,11 +74,7 @@ python testing.py --dataset NUDT-SIRST --image_size 256 --weights ./checkpoints/
 
 ## Qualitative Results
 <p align="center">
-    <img src=./assets/vis_air.png width="600">
-</p>
-
-<p align="center">
-    <img src=./assets/vis_sea.png width="600">
+    <img src=./assets/vis_sea.png width="900">
 </p>
 
 ## Citation
