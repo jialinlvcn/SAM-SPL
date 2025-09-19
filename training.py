@@ -7,9 +7,7 @@ import torch.distributed as dist
 from sam_spl.base_model import make_adaptor
 from training.Adan import Adan
 from dataset.image_floder import ImageFolder
-from training import Trainer
-from training.utils import seed_everything
-from training.metrics_config import metricWrapper
+from training import Trainer, seed_everything, metricWrapper
 from loguru import logger
 import datetime
 import yaml
@@ -155,21 +153,19 @@ def main():
         num_workers=7,
         distributed=distributed,
         save_dir=args.save_dir,
+        metric_wrapper = metricWrapper(),
     )
-    metric_wrapper = metricWrapper(n_class=1)
+    
 
     # Training loop
     for epoch in range(args.epoch):
         trainer.epoch = epoch
         trainer.train_one_epoch()
         if epoch % 1 == 0:
-            val_loss, val_metrics = trainer.evaluate(
-                metric_wrapper=metric_wrapper
-            )
+            val_loss, val_metrics = trainer.evaluate()
             trainer.save_checkpoint(
                 save_path=os.path.join(args.save_dir, f"checkpoint_epoch_{epoch}.pt")
             )
-        trainer.scheduler.step()
 
 
 if __name__ == "__main__":

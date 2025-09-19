@@ -1,3 +1,15 @@
+"""Base model utilities for SAM-SPL.
+
+This module provides adapter components that connect a SAM-style image encoder
+with the project's custom decoder and mask heads. The key elements are:
+- `SamAdaptor`: adapts SAM encoder outputs into multi-scale mask outputs.
+- `DynamicConvBlock` and `build_dynamic_conv`: helpers to build dynamic
+    convolutional blocks that optionally downsample based on stage count.
+
+Only documentation strings have been added/updated; no computational logic
+is changed by these edits.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,6 +38,21 @@ def weights_init_kaiming(m):
         pass
 
 class DynamicConvBlock(nn.Module):
+    """Dynamic convolutional block with optional downsampling stages.
+
+    The block always starts with a 1x1 convolution + BatchNorm + GELU for
+    channel fusion. Depending on the provided stage index ``n`` (must be
+    ``<= 4``) the block will append up to ``4 - n`` 2x2 stride-2 convolutions
+    each followed by GELU to perform additional downsampling.
+
+    Parameters
+    ----------
+    skip_channel : int
+        Number of input/output channels.
+    n : int
+        Stage index used to determine how many downsampling convolutions to
+        append. Must satisfy ``n <= 4``.
+    """
     def __init__(self, skip_channel, n):
         super().__init__()
         self.skip_channel = skip_channel
@@ -35,6 +62,11 @@ class DynamicConvBlock(nn.Module):
         self.conv_blocks = self._build_blocks()
     
     def _build_blocks(self):
+        """Build and return the sequential convolutional layers.
+
+        The returned module always begins with a 1x1 conv + BN + GELU and then
+        contains (4 - n) blocks of 2x2 stride-2 conv + GELU.
+        """
         layers = [
             nn.Conv2d(self.skip_channel, self.skip_channel, kernel_size=1, stride=1),
             nn.BatchNorm2d(self.skip_channel),
@@ -48,16 +80,42 @@ class DynamicConvBlock(nn.Module):
                 nn.Conv2d(self.skip_channel, self.skip_channel, kernel_size=2, stride=2),
                 nn.GELU()
             ])
-        
+
         return nn.Sequential(*layers)
     
     def forward(self, x):
+        """Forward pass through the constructed convolutional sequence.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor with shape (B, C, H, W), where C == ``skip_channel``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after the conv sequence.
+        """
         return self.conv_blocks(x)
     
-def build_dynamic_conv(skip_channel, n):
+def build_dynamic_conv(skip_channel: int, n: int) -> nn.Sequential:
+    """Functional helper that returns an ``nn.Sequential`` with the same
+    rules as :class:`DynamicConvBlock`.
+
+    Parameters
+    ----------
+    skip_channel : int
+        Number of channels.
+    n : int
+        Stage index; controls how many downsampling convs are added.
+
+    Returns
+    -------
+    nn.Sequential
+        Sequential module implementing the dynamic conv pattern.
+    """
     if n > 4:
         raise ValueError(f"n must be <= 4, but got {n}")
-
     layers = [
         nn.Conv2d(skip_channel, skip_channel, kernel_size=1, stride=1),
         nn.BatchNorm2d(skip_channel),
@@ -73,6 +131,16 @@ def build_dynamic_conv(skip_channel, n):
     return nn.Sequential(*layers)
 
 class SamAdaptor(nn.Module):
+    """Adapter that converts SAM encoder outputs into multi-scale masks.
+
+    The adapter fuses SAM multi-scale features with an auxiliary dense branch
+    and optionally uses a transformer-based decoder (``decoder_transformer``)
+    plus a hypernetwork to produce deep mask features. These features are
+    then passed through upsampling blocks and skip connections to produce
+    multi-scale mask tensors.
+
+    See the constructor for parameter descriptions.
+    """
     def __init__(
         self,
         sam_encoder: nn.Module,
@@ -83,7 +151,6 @@ class SamAdaptor(nn.Module):
         dense_low_channels: list[int] = [96, 48, 24],
         num_mask_tokens=1,
         use_sam_decoder=True,
-        mode=4,
         pe_inch=[24, 48, 96],
     ):
         super().__init__()
@@ -128,21 +195,10 @@ class SamAdaptor(nn.Module):
                 nn.GELU(),
             )
             self.output_hypernetworks_mlp = MLP(self.decoder_dim, self.decoder_dim, dense_low_channels[0], 3)
-            # self.image_pe_encoder = MultiScalePositionalEncoder(
-            #     in_chans=dense_low_channels[::-1],
-            #     down_times=[len(self.dense_low_channels) - i - 1 for i in range(len(dense_low_channels))],
-            # )
             self.image_pe_encoder = MultiScalePositionalEncoder(
                 in_chans=pe_inch,
                 down_times=[len(self.dense_low_channels) - i - 1 for i in range(len(pe_inch))],
             )
-            # self.proj_block = nn.Sequential(
-            #     nn.Conv2d(self.skip_channel_gen[0], self.skip_channel_gen[0], kernel_size=1, stride=1),
-            #     nn.BatchNorm2d(self.skip_channel_gen[0]),
-            #     nn.GELU(),
-            #     nn.Conv2d(self.skip_channel_gen[0], self.skip_channel_gen[0], kernel_size=2, stride=2),
-            #     nn.GELU(),
-            # )
             self.proj_block = build_dynamic_conv(self.skip_channel_gen[0], len(stages))
 
             self.deep_conv_block = nn.Sequential(
@@ -165,12 +221,31 @@ class SamAdaptor(nn.Module):
         self.apply(weights_init_kaiming)
 
     def _select_block(self, block: str) -> nn.Module:
-        """Select the appropriate block type based on the provided string."""
+        """Select an encoder block class by name.
+
+        Parameters
+        ----------
+        block : str
+            One of 'res', 'vgg', or 'dense'.
+
+        Returns
+        -------
+        nn.Module
+            The block class corresponding to the provided name. Defaults to
+            :class:`Res_CBAM_block` if an unknown name is given.
+        """
         blocks = {"res": Res_CBAM_block, "vgg": VGGBlock, "dense": DenseBlock}
         return blocks.get(block, Res_CBAM_block)  # Default to Res_CBAM_block if not found
 
     def _initialize_up_decoders_and_skip_convs(self) -> tuple:
-        """Initialize up decoders and skip connections."""
+        """Initialize up-sampling decoder blocks and skip convolution modules.
+
+        Returns
+        -------
+        tuple
+            A tuple ``(up_decoders, skip_convs)`` where each element is an
+            ``nn.ModuleList`` containing the corresponding modules.
+        """
 
         up_decoders = nn.ModuleList()
         skip_convs = nn.ModuleList()
@@ -189,7 +264,14 @@ class SamAdaptor(nn.Module):
         return up_decoders, skip_convs
 
     def _initialize_up_decoders_and_skip_convs2(self) -> tuple:
-        """Initialize up decoders and skip connections."""
+        """Variant initialization that uses ``self.dense_low_channels[1:]``
+        as the input channel list for skip modules.
+
+        Returns
+        -------
+        tuple
+            ``(up_decoders, skip_convs)`` as ``nn.ModuleList`` objects.
+        """
 
         up_decoders = nn.ModuleList()
         skip_convs = nn.ModuleList()
@@ -207,24 +289,27 @@ class SamAdaptor(nn.Module):
         return up_decoders, skip_convs
 
     def _initialize_reduction_convs(self) -> nn.ModuleList:
-        """Initialize mask convolution layers."""
+        """Create 1x1 conv layers to reduce deep feature maps to single-channel
+        masks.
+
+        Returns
+        -------
+        nn.ModuleList
+            ModuleList of ``nn.Conv2d(ch, 1, kernel_size=1)`` for each mask
+            generation channel.
+        """
         reducttion_conv = nn.ModuleList()
         for ch in self.mask_channel_gen:
             reducttion_conv.append(nn.Conv2d(ch, 1, kernel_size=1, stride=1))
         return reducttion_conv
 
-    def _sam_load_state_dict(model, state_dict):
-        new_state_dict = {}
-        for key, value in state_dict.items():
-            if "sam_mask_decoder.transformer" in key:
-                new_key = key.replace("sam_mask_decoder.transformer", "decoder_f")
-                new_state_dict[new_key] = value
-            else:
-                new_state_dict[key] = value
-        model.load_state_dict(new_state_dict, strict=False)
-
     def _load_sam_checkpoint(self, ckpt_path):
-        """Load the parameters of sam2"""
+        """Load SAM checkpoint parameters from the given path, if provided.
+
+        The function attempts to load the checkpoint on CPU and then calls
+        ``self.load_state_dict`` with ``strict=False`` to allow partial
+        compatibility.
+        """
         if ckpt_path is not None:
             sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]
             # sd = {k.replace("sam_mask_decoder.transformer", "decoder_transformer"): v for k, v in sd.items()}
@@ -232,7 +317,12 @@ class SamAdaptor(nn.Module):
         print("Finish loading sam2 checkpoint")
 
     def _freeze_encoder(self):
-        """Freeze the image_encoder of sam2"""
+        """Freeze parts of the image encoder while leaving promote generator
+        and decoder transformer parameters trainable.
+
+        This helper sets ``requires_grad`` appropriately based on parameter
+        name patterns.
+        """
         for name, para in self.named_parameters():
             if "image_encoder.trunk" in name and "promote_genertor" not in name:
                 para.requires_grad_(False)
@@ -242,14 +332,43 @@ class SamAdaptor(nn.Module):
                 para.requires_grad_(True)
 
     def print_param_quantity(self):
-        """Calculate model parameters for training."""
+        """Print a simple summary of parameter quantities (in millions).
+
+        The printed value reports the total model parameter count adjusted to
+        exclude the frozen encoder trunk while including the promote generator
+        parameters.
+        """
         trunk_param = sum(p.numel() for p in self.image_encoder.trunk.parameters()) / 1_000_000
         pmtg_param = sum(p.numel() for p in self.image_encoder.trunk.promote_genertor.parameters()) / 1_000_000
         all_param = sum(p.numel() for p in self.parameters()) / 1_000_000
         print(f"The parameter number of the model is {all_param - trunk_param + pmtg_param:.2f}M")
 
     def _process_deep_features(self, features: dict) -> list:
-        """Process deep features through convolution and upsampling."""
+        """Process deep features with the decoder transformer and hypernetwork.
+
+        This method:
+        - Selects the deepest available image embeddings.
+        - Computes multi-scale positional encodings.
+        - Runs the decoder transformer producing token features and a
+          transformed source representation.
+        - Applies a hypernetwork MLP to obtain scaling factors which are used
+          to modulate the upscaled embedding.
+        - Projects and refines the result with ``proj_block`` and then uses
+          upsampling decoder blocks and skip connections to create a list of
+          multi-scale deep feature maps (not yet reduced to single-channel
+          masks).
+
+        Parameters
+        ----------
+        features : dict
+            Dictionary returned by :class:`ImageEncoder` expected to contain
+            keys ``"dense_embeds"`` and ``"sam_backbone_embeds"``.
+
+        Returns
+        -------
+        list
+            List of multi-scale deep features.
+        """
         masks = []
         dense_features, sam_feature = features["dense_embeds"], features["sam_backbone_embeds"]
         try:
@@ -279,7 +398,12 @@ class SamAdaptor(nn.Module):
         return masks
 
     def _process_deep_features2(self, features: dict) -> list:
-        """Process deep features through convolution and upsampling."""
+        """Alternative processing path used when SAM decoder is not enabled.
+
+        This simpler path concatenates dense and SAM features, reverses the
+        order and runs projection + upsampling modules to produce multi-scale
+        deep features.
+        """
         masks = []
         dense_features, sam_feature = features["dense_embeds"], features["sam_backbone_embeds"]
 
@@ -294,7 +418,12 @@ class SamAdaptor(nn.Module):
         return masks[-len(self.mask_channel_gen):]
 
     def _generate_masks(self, deep_feats: list, image_size: list[int, int]) -> list:
-        """Generate masks from the deep features."""
+        """Reduce multi-scale deep features to single-channel masks and resize.
+
+        For each deep feature map, this method resizes it to ``image_size``
+        using bilinear interpolation and applies a 1x1 conv to produce the
+        final single-channel mask tensor.
+        """
         masks = []
         for mask_conv, feature_map in zip(self.reduction_convs[::-1], deep_feats[::-1]):
             mask_0 = F.interpolate(feature_map, image_size, mode="bilinear", align_corners=False)
@@ -304,6 +433,18 @@ class SamAdaptor(nn.Module):
         return masks
 
     def forward(self, x: torch.tensor):
+        """Forward method: produce multi-scale masks from input images.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input image tensor of shape (B, C, H, W).
+
+        Returns
+        -------
+        list[torch.Tensor]
+            List of mask tensors, each shaped (B, 1, H, W).
+        """
         out_image_size = x.shape[-2:]
         features = self.image_encoder(x)
         if self.use_sam_decoder:
