@@ -176,10 +176,7 @@ uv.lock
 # datasets
 dataset/*
 !dataset/image_floder.py
-!dataset/set_configs/IRSTD-1k/*
-!dataset/set_configs/IRSTDID-SKY/*
-!dataset/set_configs/NUDT-sea/*
-!dataset/set_configs/NUDT-SIRST/*
+!dataset/set_configs
 
 # checkpoints
 checkpoints/*

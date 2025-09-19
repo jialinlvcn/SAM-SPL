@@ -30,7 +30,7 @@ uv sync
 ```
 
 ## Datasets
-For the dataset used in this paper, please download the following datasets [NUDT-SIRST](https://github.com/YeRen123455/Infrared-Small-Target-Detection) / [IRSTD-1k](https://github.com/RuiZhang97/ISNet) / [IRSTDID-SKY](https://github.com/xdFai/IRSTDID-800) / [NUDT-Sea](https://github.com/TianhaoWu16/Multi-level-TransUNet-for-Space-based-Infrared-Tiny-ship-Detection) and move them to `./datasets`.
+For the dataset used in this paper, please download the following datasets [NUDT-SIRST](https://github.com/YeRen123455/Infrared-Small-Target-Detection) / [IRSTD-1k](https://github.com/RuiZhang97/ISNet) / [IRSTDID-SKY](https://github.com/xdFai/IRSTDID-800) / [NUDT-Sea](https://github.com/TianhaoWu16/Multi-level-TransUNet-for-Space-based-Infrared-Tiny-ship-Detection) and move them to `./dataset`.
 
 Or you can access all the datasets we have collected via [Baidu Netdisk](https://pan.baidu.com/s/1FKV1m-RilwqQMcOjMyECbg?pwd=eq52).
 
