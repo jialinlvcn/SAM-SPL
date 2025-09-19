@@ -3,8 +3,8 @@
   <p align="center">
     <a href="https://github.com/fuyimin96"><strong>Yimin Fu</strong></a>&nbsp;&nbsp;
     <a href="https://github.com/jialinlvcn"><strong>Jialin Lyu</strong></a>&nbsp;&nbsp;
-    <strong>Zhunga Liu</strong></a>&nbsp;&nbsp;
     <strong>Peiyuan Ma</strong></a>&nbsp;&nbsp;
+    <strong>Zhunga Liu</strong></a>&nbsp;&nbsp;
     <strong>Michael K. Ng</strong></a>
   </p>
   <br>
@@ -74,13 +74,17 @@ python testing.py --dataset NUDT-SIRST --image_size 256 --weights ./checkpoints/
 
 ## Qualitative Results
 <p align="center">
-    <img src=./assets/vis_air.png width="600">
-</p>
-
-<p align="center">
-    <img src=./assets/vis_sea.png width="600">
+    <img src=./assets/vis_sea.png width="900">
 </p>
 
 ## Citation
 If you find our work and this repository useful. Please consider giving a star :star: and citation.
+```bibtex
+@article{fu2025samspl,
+  title={A Unified SAM-Guided Self-Prompt Learning Framework for Infrared Small Target Detection},
+  author={Fu, Yimin and Lyu, Jialin and Ma, Peiyuan and Liu, Zhunga and Ng, Michael K},
+  journal={IEEE Transactions on Geoscience and Remote Sensing},
+  year={2025},
+  publisher={IEEE}
+}
 ```
