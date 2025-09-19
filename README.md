@@ -3,8 +3,8 @@
   <p align="center">
     <a href="https://github.com/fuyimin96"><strong>Yimin Fu</strong></a>&nbsp;&nbsp;
     <a href="https://github.com/jialinlvcn"><strong>Jialin Lyu</strong></a>&nbsp;&nbsp;
-    <strong>Zhunga Liu</strong></a>&nbsp;&nbsp;
     <strong>Peiyuan Ma</strong></a>&nbsp;&nbsp;
+    <strong>Zhunga Liu</strong></a>&nbsp;&nbsp;
     <strong>Michael K. Ng</strong></a>
   </p>
   <br>
